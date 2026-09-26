@@ -23,7 +23,7 @@ public class Student {
     private String email;
 
     // Referencing the 'student' field in the Homework class. Cascade manages the persistence of dependent objects
-    @OneToMany(mappedBy = "student", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @OneToMany(mappedBy = "student", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private Set<Homework> homeworks = new HashSet<>();
 
     // Пустой конструктор обязателен для HibernateAn empty constructor is required by Hibernate

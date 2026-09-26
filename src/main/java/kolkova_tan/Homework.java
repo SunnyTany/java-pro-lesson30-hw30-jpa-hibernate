@@ -21,8 +21,8 @@ public class Homework {
     @Column(name = "mark")
     private int mark;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "student_id")
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "student_id", nullable = false)
     private Student student;
 
     // An empty constructor is required by Hibernate

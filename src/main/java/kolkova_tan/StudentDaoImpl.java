@@ -8,100 +8,103 @@ import java.util.List;
 
 public class StudentDaoImpl implements GenericDao<Student, Long> {
 
-    // The factory name must strictly match the persistence-unit name in persistence.xml
     private final EntityManagerFactory emf = Persistence.createEntityManagerFactory("hillel-persistence-unit");
 
     @Override
     public void save(Student entity) {
-        EntityManager em = emf.createEntityManager();
-        EntityTransaction tx = em.getTransaction();
-        try {
-            tx.begin();
-            em.persist(entity);
-            tx.commit();
-        } catch (Exception e) {
-            if (tx.isActive()) tx.rollback();
-            e.printStackTrace();
-        } finally {
-            em.close();
+        // Использование try-with-resources автоматически закроет EntityManager
+        try (EntityManager em = emf.createEntityManager()) {
+            EntityTransaction tx = em.getTransaction();
+            try {
+                tx.begin();
+                em.persist(entity);
+                tx.commit();
+            } catch (Exception e) {
+                if (tx.isActive()) tx.rollback();
+                throw new DaoException("Не удалось сохранить студента с email: " + entity.getEmail(), e);
+            }
         }
     }
 
     @Override
     public Student findById(Long id) {
-        EntityManager em = emf.createEntityManager();
-        try {
-            return em.find(Student.class, id);
-        } finally {
-            em.close();
+        try (EntityManager em = emf.createEntityManager()) {
+            Student student = em.find(Student.class, id);
+            if (student == null) {
+                throw new DaoException("Студент с ID " + id + " не найден в базе данных", null);
+            }
+            return student;
+        } catch (DaoException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new DaoException("Ошибка при поиске студента по ID: " + id, e);
         }
     }
 
     @Override
     public Student findByEmail(String email) {
-        EntityManager em = emf.createEntityManager();
-        try {
-            return em.createQuery("SELECT s FROM Student s WHERE s.email = :email", Student.class)
+        try (EntityManager em = emf.createEntityManager()) {
+            // Использование JOIN FETCH решает проблему LazyInitializationException,
+            // так как подгружает коллекции за один запрос
+            List<Student> students = em.createQuery(
+                            "SELECT s FROM Student s LEFT JOIN FETCH s.homeworks WHERE s.email = :email", Student.class)
                     .setParameter("email", email)
-                    .getSingleResult();
+                    .getResultList(); // Безопасное получение списка вместо getSingleResult()
+
+            return students.isEmpty() ? null : students.get(0);
         } catch (Exception e) {
-            return null; // Если студент с таким email не найден
-        } finally {
-            em.close();
+            throw new DaoException("Ошибка при поиске студента по email: " + email, e);
         }
     }
 
     @Override
     public List<Student> findAll() {
-        EntityManager em = emf.createEntityManager();
-        try {
-            return em.createQuery("SELECT s FROM Student s", Student.class).getResultList();
-        } finally {
-            em.close();
+        try (EntityManager em = emf.createEntityManager()) {
+            // Здесь подгружаем с JOIN FETCH, чтобы в цикле Main'а не было N+1 запросов и Lazy сессии
+            return em.createQuery("SELECT DISTINCT s FROM Student s LEFT JOIN FETCH s.homeworks", Student.class)
+                    .getResultList();
+        } catch (Exception e) {
+            throw new DaoException("Ошибка при получении списка всех студентов", e);
         }
     }
 
     @Override
     public Student update(Student entity) {
-        EntityManager em = emf.createEntityManager();
-        EntityTransaction tx = em.getTransaction();
-        Student updatedStudent = null;
-        try {
-            tx.begin();
-            updatedStudent = em.merge(entity);
-            tx.commit();
-        } catch (Exception e) {
-            if (tx.isActive()) tx.rollback();
-            e.printStackTrace();
-        } finally {
-            em.close();
+        try (EntityManager em = emf.createEntityManager()) {
+            EntityTransaction tx = em.getTransaction();
+            try {
+                tx.begin();
+                Student updatedStudent = em.merge(entity);
+                tx.commit();
+                return updatedStudent;
+            } catch (Exception e) {
+                if (tx.isActive()) tx.rollback();
+                throw new DaoException("Не удалось обновить данные студента: " + entity.getEmail(), e);
+            }
         }
-        return updatedStudent;
     }
 
     @Override
     public boolean deleteById(Long id) {
-        EntityManager em = emf.createEntityManager();
-        EntityTransaction tx = em.getTransaction();
-        boolean success = false;
-        try {
-            tx.begin();
-            Student student = em.find(Student.class, id);
-            if (student != null) {
-                em.remove(student);
-                success = true;
+        try (EntityManager em = emf.createEntityManager()) {
+            EntityTransaction tx = em.getTransaction();
+            try {
+                tx.begin();
+                Student student = em.find(Student.class, id);
+                if (student != null) {
+                    em.remove(student);
+                    tx.commit();
+                    return true;
+                }
+                tx.commit();
+                return false;
+            } catch (Exception e) {
+                if (tx.isActive()) tx.rollback();
+                throw new DaoException("Ошибка при удалении студента с ID: " + id, e);
             }
-            tx.commit();
-        } catch (Exception e) {
-            if (tx.isActive()) tx.rollback();
-            e.printStackTrace();
-        } finally {
-            em.close();
         }
-        return success;
     }
 
-    // Method to close the factory when the application terminates
     public void close() {
         if (emf.isOpen()) {
             emf.close();
